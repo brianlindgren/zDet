@@ -1,3 +1,5 @@
+//(c) 2024 Brian Lindgren
+
 #include "m_pd.h"
 #include <math.h>
 #include <string>
