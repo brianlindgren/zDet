@@ -25,7 +25,7 @@ private:
     bool prevPitchDetectionFlag_;
     bool freqOutRange_;
     bool freqOutDect_;
-    float sampLen_;
+    double sampLen_;
     float frequency_;
     float frequencyNew_;
     float frequencyPrev_ = 0;
@@ -69,7 +69,7 @@ float evString::process(float in) {
         pitchDetectionFlag = false;
     }
 
-    // if we have a zero crossing and the wave is coming up from below the zero line
+    // if we have a zero crossing and the wave is coming up from below the zero line and we've waited beyond the 'high' threshold time
     if (pitchDetectionFlag != prevPitchDetectionFlag_ && !prevPitchDetectionFlag_
         && pitchDetectionTimer_ >= pitchDecHi_) {
 
@@ -84,6 +84,7 @@ float evString::process(float in) {
             freqOutRange_ = true;
             freqOutDect_ = true;
         } else {
+        	frequency_ = 0;
             freqOutRange_ = false;
             freqOutDect_ = false;
         }
@@ -101,9 +102,9 @@ float evString::process(float in) {
 }
 
 // Pure Data external definition
-static t_class *zDect_class;
+static t_class *zDet_class;
 
-typedef struct _zDect {
+typedef struct _zDet {
     t_object x_obj;
     t_sample f;
     evString *string;
@@ -113,11 +114,11 @@ typedef struct _zDect {
     t_outlet *msg_outlet; // outlet for frequency message
     t_outlet *range_outlet; // outlet for frequency in range
     t_outlet *dect_outlet; // outlet for detection status
-} t_zDect;
+} t_zDet;
 
 // Constructor
-void *zDect_new(t_floatarg hz, t_floatarg hzHi) {
-    t_zDect *x = (t_zDect *)pd_new(zDect_class);
+void *zDet_new(t_floatarg hz, t_floatarg hzHi) {
+    t_zDet *x = (t_zDet *)pd_new(zDet_class);
 
     // Create inlets for low and high range, and detection on/off
     floatinlet_new(&x->x_obj, &x->low_range);
@@ -130,23 +131,23 @@ void *zDect_new(t_floatarg hz, t_floatarg hzHi) {
     x->range_outlet = outlet_new(&x->x_obj, &s_float);
     x->dect_outlet = outlet_new(&x->x_obj, &s_float);
 
-    // Initialize evString with the provided frequencies or default to 20 Hz and 4000 Hz
-    x->string = new evString(sys_getsr(), hz != 0 ? hz : 20, hzHi != 0 ? hzHi : 4000);
+    // Initialize evString with the provided frequencies or default to 0 Hz and 20000 Hz
+    x->string = new evString(sys_getsr(), hz != 0 ? hz : 0, hzHi != 0 ? hzHi : 20000);
     x->detection_on = 1; // start with detection on
-    x->low_range = hz != 0 ? hz : 20;
-    x->high_range = hzHi != 0 ? hzHi : 4000;
+    x->low_range = hz != 0 ? hz : 0;
+    x->high_range = hzHi != 0 ? hzHi : 20000;
 
     return (void *)x;
 }
 
 // Destructor
-void zDect_free(t_zDect *x) {
+void zDet_free(t_zDet *x) {
     delete x->string;
 }
 
 // DSP Routine
-t_int *zDect_perform(t_int *w) {
-    t_zDect *x = (t_zDect *)(w[1]);
+t_int *zDet_perform(t_int *w) {
+    t_zDet *x = (t_zDet *)(w[1]);
     t_sample *in = (t_sample *)(w[2]);
     t_sample *out = (t_sample *)(w[3]);
     int n = (int)(w[4]);
@@ -181,20 +182,20 @@ t_int *zDect_perform(t_int *w) {
 }
 
 // DSP Setup
-void zDect_dsp(t_zDect *x, t_signal **sp) {
+void zDet_dsp(t_zDet *x, t_signal **sp) {
     x->string->setSampleRate(sp[0]->s_sr); // Update sample rate
-    dsp_add(zDect_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, sp[0]->s_n);
+    dsp_add(zDet_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, sp[0]->s_n);
 }
 
 // Setup Function
-extern "C" void zDect_tilde_setup(void) {
-    zDect_class = class_new(gensym("zDect~"),
-                            (t_newmethod)zDect_new,
-                            (t_method)zDect_free,
-                            sizeof(t_zDect),
+extern "C" void zDet_tilde_setup(void) {
+    zDet_class = class_new(gensym("zDet~"),
+                            (t_newmethod)zDet_new,
+                            (t_method)zDet_free,
+                            sizeof(t_zDet),
                             CLASS_DEFAULT,
                             A_DEFFLOAT, A_DEFFLOAT, 0);
 
-    CLASS_MAINSIGNALIN(zDect_class, t_zDect, f);
-    class_addmethod(zDect_class, (t_method)zDect_dsp, gensym("dsp"), A_CANT, 0);
+    CLASS_MAINSIGNALIN(zDet_class, t_zDet, f);
+    class_addmethod(zDet_class, (t_method)zDet_dsp, gensym("dsp"), A_CANT, 0);
 }

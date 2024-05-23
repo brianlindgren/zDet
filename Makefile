@@ -1,14 +1,21 @@
-
-# Your external's name
-lib.name = zDect~
+# Name of your external library
+lib.name = zDet~
 
 # Source files
-class.sources = src/zDect~.cpp
+class.sources = src/zDet~.cpp
 
-PDLIBBUILDER_DIR=pd-lib-builder
+# Help file (and any other data files)
+datafiles = zDet~-help.pd
+
+# Path to pd-lib-builder
+PDLIBBUILDER_DIR = pd-lib-builder
+
+# Include pd-lib-builder makefile
 include $(PDLIBBUILDER_DIR)/Makefile.pdlibbuilder
 
+# Custom targets for build and install checks
 buildcheck: all
-	test -e _template_.$(extension)
+	test -e zDet~.$(extension)
+
 installcheck: install
-	test -e $(installpath)/_template_.$(extension)
+	test -e $(installpath)/zDet~.$(extension)
