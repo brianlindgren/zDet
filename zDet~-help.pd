@@ -1,4 +1,4 @@
-#N canvas 867 169 634 655 12;
+#N canvas 659 181 634 655 12;
 #X obj 100 399 snapshot~;
 #X obj 24 317 tgl 19 0 empty empty empty 0 -10 0 12 #fcfcfc #000000 #000000 0 1;
 #X floatatom 100 423 5 0 0 0 - - - 0;
@@ -18,7 +18,7 @@
 #X text 138 104 inlet 1: signal;
 #X text 28 52 [zDet~] analyzes an incoming sound based on zero crossings., f 78;
 #X obj 100 105 osc~;
-#X obj 100 83 nbx 5 17 -1e+37 1e+37 0 1 empty empty empty 0 -10 0 12 #fcfcfc #000000 #000000 893 256;
+#X obj 100 83 nbx 5 17 -1e+37 1e+37 0 1 empty empty empty 0 -10 0 12 #fcfcfc #000000 #000000 432 256;
 #X obj 100 273 zDet~ 60 600;
 #X text 194 272 2 optional arguments: 1) low detection threshold;
 #X text 349 290 2) high detection threshold;
