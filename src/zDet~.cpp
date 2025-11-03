@@ -4,6 +4,18 @@
 #include <math.h>
 #include <string>
 
+// ---- strict (±1 sample) helpers for sample-interval comparisons ----
+static inline int iabs_int(int v) { return (v < 0) ? -v : v; }
+
+static inline bool approxEqualSamples(int a, int b) {
+    // treat as equal only if they differ by at most 1 sample
+    return iabs_int(a - b) <= 1;
+}
+static inline bool clearlyDifferentSamples(int a, int b) {
+    // different if they differ by more than 1 sample
+    return iabs_int(a - b) > 1;
+}
+
 // Define the evString class for zero-crossing detection
 class evString {
 public:
@@ -34,6 +46,9 @@ private:
     float pitchDecLo_;
     float pitchDecHi_;
     int pitchDetectionTimer_;
+
+    // keep short history of interval lengths (in samples)
+    int N_z0_ = 0, N_z1_ = 0, N_z2_ = 0;
 
     void firstSetup(int rate);
     void recalculateSettings();
@@ -71,34 +86,61 @@ float evString::process(float in) {
         pitchDetectionFlag = false;
     }
 
-    // if we have a zero crossing and the wave is coming up from below the zero line and we've waited beyond the 'high' threshold time
+    // positive-going zero crossing, after the 'high' threshold wait
     if (pitchDetectionFlag != prevPitchDetectionFlag_ && !prevPitchDetectionFlag_
         && pitchDetectionTimer_ >= pitchDecHi_) {
 
-        float freq = 1 / (pitchDetectionTimer_ * sampLen_);
+        // interval in samples since last positive-going crossing
+        int N = pitchDetectionTimer_;
+        float freqCandidate = (N > 0) ? (float)sampleRate_ / (float)N : 0.0f;
 
-        // if the calculated frequency is above the string's tuned pitch, let's use it!
-        if (freq > pitchDecLo_) {
-           	frequencyPrev_ = frequency_;
-           	frequencyNew_ = freq;
-            frequency_ = (frequencyPrev_ + frequencyNew_) / 2;
-            
-            freqOutRange_ = true;
-            freqOutDect_ = true;
+        // update interval history: Z (latest), Z-1, Z-2
+        N_z2_ = N_z1_;
+        N_z1_ = N_z0_;
+        N_z0_ = N;
+
+        // alternating test: Z ≈ Z-2 AND Z != Z-1 (with strict ±1-sample tolerance)
+        bool z_eq_z2 = approxEqualSamples(N_z0_, N_z2_);
+        bool z_ne_z1 = clearlyDifferentSamples(N_z0_, N_z1_);
+        bool alternating = z_eq_z2 && z_ne_z1;
+
+        float freqOut = 0.f;
+
+        if (alternating) {
+            // one fundamental period is the sum of two adjacent sub-intervals
+            int N_sum = N_z0_ + N_z1_;
+            if (N_sum > 0) {
+                freqOut = (float)sampleRate_ / (float)N_sum; // = 1 / ((Z + Z-1) * sampLen)
+            } else {
+                freqOut = freqCandidate;
+            }
         } else {
-        	frequency_ = 0;
-            freqOutRange_ = false;
-            freqOutDect_ = false;
+            // clean single-interval period — your original light smoothing
+            frequencyPrev_ = frequency_;
+            frequencyNew_  = freqCandidate;
+            freqOut        = 0.5f * (frequencyPrev_ + frequencyNew_);
         }
 
-        pitchDetectionTimer_ = 0; // reset timer regardless if the frequency was too low
+        // range gate
+        if (freqOut > pitchDecLo_) {
+            frequency_    = freqOut;
+            freqOutRange_ = true;
+            freqOutDect_  = true;
+        } else {
+            frequency_    = 0.f;
+            freqOutRange_ = false;
+            freqOutDect_  = false;
+        }
+
+        pitchDetectionTimer_ = 0; // reset timer regardless
     } else {
+        // between detections
         freqOutDect_ = false;
     }
 
-    // needs to be outside of an if/else. need to run every sample
+    // run every sample
     pitchDetectionTimer_++;
-    prevPitchDetectionFlag_ = pitchDetectionFlag; // keep track of zero crossings
+    prevPitchDetectionFlag_ = pitchDetectionFlag;
 
     return frequency_;
 }
@@ -113,9 +155,9 @@ typedef struct _zDet {
     t_float detection_on; // 0 for off, 1 for on
     t_float low_range;
     t_float high_range;
-    t_outlet *msg_outlet; // outlet for frequency message
+    t_outlet *msg_outlet;   // outlet for frequency message
     t_outlet *range_outlet; // outlet for frequency in range
-    t_outlet *dect_outlet; // outlet for detection status
+    t_outlet *dect_outlet;  // outlet for detection status
 } t_zDet;
 
 // Constructor
@@ -129,9 +171,9 @@ void *zDet_new(t_floatarg hz, t_floatarg hzHi) {
 
     // Create signal and message outlets
     outlet_new(&x->x_obj, &s_signal);
-    x->msg_outlet = outlet_new(&x->x_obj, &s_float);
+    x->msg_outlet   = outlet_new(&x->x_obj, &s_float);
     x->range_outlet = outlet_new(&x->x_obj, &s_float);
-    x->dect_outlet = outlet_new(&x->x_obj, &s_float);
+    x->dect_outlet  = outlet_new(&x->x_obj, &s_float);
 
     // Initialize evString with the provided frequencies or default to 0 Hz and 20000 Hz
     x->string = new evString(sys_getsr(), hz != 0 ? hz : 0, hzHi != 0 ? hzHi : 20000);
@@ -166,7 +208,7 @@ t_int *zDet_perform(t_int *w) {
         if (x->detection_on) {
             frequency = x->string->process(in[i]);
             freqOutRange = x->string->isFreqOutRange();
-            freqOutDect = x->string->isFreqOutDect();
+            freqOutDect  = x->string->isFreqOutDect();
             out[i] = frequency;
         } else {
             out[i] = 0; // output 0 when detection is off
@@ -174,10 +216,10 @@ t_int *zDet_perform(t_int *w) {
     }
 
     if (x->detection_on) {
-        // Send frequency as a message
-        outlet_float(x->msg_outlet, frequency);
+        // Send frequency and flags as messages (one per DSP block)
+        outlet_float(x->msg_outlet,   frequency);
         outlet_float(x->range_outlet, freqOutRange);
-        outlet_float(x->dect_outlet, freqOutDect);
+        outlet_float(x->dect_outlet,  freqOutDect);
     }
 
     return (w + 5);
